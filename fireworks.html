@@ -1,0 +1,381 @@
+<html>
+<head>
+<script type="application/javascript">
+	function degtorad(angle)
+	{
+		return angle / 180.0 * Math.PI;
+	}
+	function makeVector(ox, oy, vx, vy)
+	{
+		var vec = function()
+		{
+			this.damping = 1.0;
+			this.origin = {x:ox, y:oy};
+			this.vector = {x:vx, y:vy};
+			this.dump = function()
+			{
+				console.log("damping  : " + this.damping);
+				console.log("magnitude: " + this.mag());
+				console.log("origin   : (" + this.origin.x + ", " + this.origin.y + ")");
+				console.log("vector   : (" + this.vector.x + ", " + this.vector.y + ")");
+				console.log("normal 1 : (" + this.normal()[0].x + ", " + this.normal()[0].y + ")");
+				console.log("normal 2 : (" + this.normal()[1].x + ", " + this.normal()[1].y + ")");
+			}
+			this.setvec = function(magx, magy)
+			{
+				this.vector.x = magx;
+				this.vector.y = magy;
+				return this;
+			}
+			this.rotate = function(angle)
+			{
+				t = degtorad(angle);
+				var x = this.vector.x;
+				var y = this.vector.y;
+				this.vector.x = x * Math.cos(t) - y * Math.sin(t);
+				this.vector.y = x * Math.sin(t) + y * Math.cos(t);
+				return this;
+			}
+			this.translate = function(dx, dy)
+			{
+				this.origin.x += dx;
+				this.origin.y += dy;
+				return this;
+			}
+			this.normal = function()
+			{
+				var dx = this.vector.x - this.origin.x;
+				var dy = this.vector.y - this.origin.y;
+				return [{x:-dy, y:dx}, {x:dy, y:-dx}];
+			}
+			this.mag = function()
+			{
+				var dx = Math.abs(this.origin.x - (this.vector.x + this.origin.x));
+				var dy = Math.abs(this.origin.y - (this.vector.y + this.origin.y));
+				return Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
+			}
+			this.scale = function(fac)
+			{
+				this.vector.x = this.vector.x * fac;
+				this.vector.y = this.vector.y * fac;
+				return this;
+			}
+			this.add = function(avec)
+			{
+				this.vector.x += avec.vector.x;
+				this.vector.y += avec.vector.y;
+				return this;
+			}
+		}
+		return new vec;
+	}
+	function makeParticle(ctx, x, y)
+	{
+		var part = function()
+		{
+			this.ctx = ctx;
+			this.forces = [];
+			this.pos = makeVector(x, y, 0, 0);
+			this.frame = 0;
+			this.life = 100;
+			this.skip = false;
+			this.dead = false;
+			this.move = function()
+			{
+				for(var f in this.forces) { this.pos.add(this.forces[f]); }
+				this.pos.translate(this.pos.vector.x, this.pos.vector.y);
+				return this;
+			}
+			this.drawDebug = function()
+			{
+				this.ctx.beginPath();
+				this.ctx.arc(this.pos.origin.x, this.pos.origin.y, 5, 0, Math.PI * 2);
+				this.ctx.closePath();
+				ctx.fillStyle = "rgb(0,0,255)";
+				this.ctx.fill();
+				this.ctx.beginPath();
+				this.ctx.arc(this.pos.origin.x + this.pos.vector.x, this.pos.origin.y + this.pos.vector.y, 3, 0, Math.PI * 2);
+				this.ctx.closePath();
+				ctx.fillStyle = "rgb(0,255,0)";
+				this.ctx.fill();
+				this.ctx.beginPath();
+				this.ctx.moveTo(this.pos.origin.x, this.pos.origin.y);
+				this.ctx.lineTo(this.pos.origin.x + this.pos.vector.x, this.pos.origin.y + this.pos.vector.y);
+				this.ctx.closePath();
+				ctx.strokeStyle = "rgb(255,0,0)";
+				this.ctx.stroke();
+				return this;
+			}
+			this.update = function()
+			{
+				if(this.skip) return this;
+				if(this.dead) return false;
+				if(this.frame == 0) { this.initFn() }
+				if(this.frame == this.life)
+				{ 
+					this.dead = true;
+					this.dieFn();
+				}
+				this.move()
+				this.frame++;
+				return this;
+			}
+			this.render = function()
+			{
+				if(this.skip || this.dead) return this;
+				this.renderFn();
+				return this;
+			}
+			this.renderFn = function(){ /* override me */}
+			this.initFn = function() { /* override me */ }
+			this.dieFn = function() { /* override me */ }
+		} 
+		return new part;
+	}
+	function makeWorld(canvas)
+	{
+		var space = function(canvas)
+		{
+			this.canvas = null;
+			this.ctx = null;
+			this.gravity = makeVector(0, 0, 0, 0.01);
+			this.dpylist = [];
+			this.width = null;
+			this.height = null;
+			this.bgcolor = "rgb(16,16,32)";
+
+			this.initCanvas = function(canvas)
+			{
+				this.canvas = document.getElementById(canvas);
+				this.ctx = this.canvas.getContext("2d");
+				this.ctx.strokeStyle = "rgb(0,0,255)";
+				this.ctx.fillStyle = "rgb(0,255,100)";
+				this.width = canvas.width;
+				this.height = canvas.height;
+				return this;
+			}
+			this.step = function()
+			{
+				this.ctx.clearRect(0, 0, 720, 480);
+				for(var i in this.dpylist)
+				{
+					var res = this.dpylist[i].update()
+					this.dpylist[i].render()
+					if(!res) delete this.dpylist[i];
+				}
+			}
+			this.add = function(obj)
+			{
+				this.dpylist.push(obj);
+			}
+			
+			this.del = function(obj)
+			{
+				for(var i in this.dpylist) 
+				{ 
+					if(this.dpylist[i] === obj) { delete this.dpylist[i]; }
+				}
+			}
+			this.initCanvas(canvas);
+		}
+		return new space(canvas);
+	}
+	
+	function randrange(low, high)
+	{
+		return parseInt((Math.random() * high) + low);
+	}
+	
+	function rgba(r, g, b, a)
+	{
+		return "rgba(" + r + ", " + g + ", " + b + ", " + a + ")";
+	}
+	
+	function rpcolor()
+	{
+		colors = ["red", "limegreen", "chartreuse", "blue", "yellow", "pink", "orange", "cyan", "gold"];
+		return colors[parseInt(Math.random() * colors.length)];
+	}
+	
+	function cloudRenderer(efx)
+	{
+		var burst = makeParticle(world.ctx, this.pos.origin.x, this.pos.origin.y);
+		burst.renderFn = function() 
+		{  
+			var i = new Image;
+			i.src = "smoke.png";
+			this.ctx.globalAlpha = (1.0 - (this.frame / this.life)) * 0.3;
+			this.ctx.drawImage(i, this.pos.origin.x - 24, this.pos.origin.y - 12);
+			this.ctx.globalAlpha = 1.0;
+		}
+		burst.pos.setvec(0.1, 0.01);
+		burst.life = 200;
+		world.add(burst);
+	}
+	
+	function tailRenderer(efx)
+	{
+		return function()
+		{
+			fill = this.ctx.fillStyle;
+			alpha = this.ctx.globalAlpha;
+			this.ctx.fillStyle = rgba(255, 192, 0, 0.3);
+			this.ctx.globalAlpha = 1.0;
+			this.ctx.fillRect(this.pos.origin.x, this.pos.origin.y, 1, 1);
+			this.ctx.fillStyle = fill;
+			this.ctx.globalAlpha = alpha;
+		}
+	}
+	
+	function chrysRenderer(efx)
+	{
+		return function() 
+		{
+			fill = this.ctx.fillStyle;
+			alpha = this.ctx.globalAlpha;
+			efx.fly(this.pos.origin.x, this.pos.origin.y);
+			this.ctx.globalAlpha = (1.0 - (this.frame / this.life)) * 1.50;
+			this.ctx.fillStyle = efx.color();
+			this.ctx.fillRect(this.pos.origin.x - 1, this.pos.origin.y - 1, 2, 2);
+			this.ctx.fillStyle = efx.color();
+			this.ctx.globalAlpha = 0.45;
+			this.ctx.fillRect(this.pos.origin.x - 1.5, this.pos.origin.y - 1.5, 3, 3);
+			this.ctx.fillStyle = fill;
+			this.ctx.globalAlpha = alpha;
+		}
+	}
+	
+	function efxSmoke(world, x, y)
+	{
+	
+	}
+	
+	function efxBurst(world, x, y)
+	{
+		var efx = function() 
+		{
+			var that = this;
+			this.count = 50;
+			this.color = function() { return rgba(0, 0, 255, 1.0); };
+			this.dir = function() { return makeVector(0, 0, 0, randrange(8, 10) * 0.1).rotate(randrange(0, 360)); };
+			this.life = function() { return randrange(10, 30); };
+			this.die = function() { };
+			
+			this.fly = function(fx, fy) 
+			{
+				var e = efxBurst(world, fx, fy);
+				e.count = 1;
+				e.color = function() { return rgba(255, 64, 0, 0.4); };
+				e.dir = function() { return makeVector(0, 0, 0, 0); }
+				e.life = function() { return 15; }
+				e.fly = function() { };
+				e.render = tailRenderer(this);
+				e.go();
+			}
+			this.render = chrysRenderer(this);
+			this.go = function()
+			{
+				for(var p = 0; p < this.count; p++)
+				{
+					var star = makeParticle(world.ctx, x, y);
+					star.life = this.life();
+					star.forces.push(world.gravity);
+					star.pos.add(this.dir());
+					star.dieFn = this.die;
+					star.renderFn = this.render;
+					world.add(star);
+				}
+			}
+		}
+		return new efx;
+	}
+	
+	function launchShell(world, x, y, userparam)
+	{
+		var shell = function()
+		{
+			var that = this;
+			this.params = {life: parseInt((Math.random() * 50) + 50),
+						   color: rpcolor(),
+						   vec_x: 0,
+						   vec_y: -5,
+						   theta: (Math.random() * 20) - 10,
+						   };
+			for (attr in userparam) { this.params[attr] = userparam[attr]; }
+			params = this.params;
+			this.burstFn = function()
+			{
+				e = efxBurst(world, this.pos.origin.x, this.pos.origin.y);
+				e.color = function() { return that.params.color; }
+				e.go();
+			}
+			this.launchFn = function() { 
+				var e = efxBurst(world, this.pos.origin.x, this.pos.origin.y);
+				e.color = function() { return rgba(255, 150, 0, 0.75); }
+				e.count = 5
+				e.dir = function() { return makeVector(0, 0, 0, -0.4).rotate(randrange(-30, 60)); } 
+				e.fly = function() {};
+				e.go();
+			};
+			this.flyFn = function()
+			{ 
+				for(var p = 0; p < 2; p++)
+				{
+					var star = makeParticle(world.ctx, 
+											this.pos.origin.x,
+											this.pos.origin.y + randrange(2, 4));
+					star.renderFn = function()
+					{
+						this.ctx.fillStyle = "rgba(255,255,255,0.15)";
+						this.ctx.fillRect(this.pos.origin.x - 1, this.pos.origin.y - 1, 2, 2);
+					}
+				
+					star.life = 30 + parseInt(Math.random() * 5);
+					star.pos.setvec(0, -0.1);
+					star.pos.rotate(Math.random() * 360);
+					world.add(star);
+				}
+
+				for(var p = 0; p < 2; p++)
+				{
+					var star = makeParticle(world.ctx, 
+											this.pos.origin.x,
+											this.pos.origin.y);
+					star.renderFn = function()
+					{
+						this.ctx.fillStyle = "rgba(255,128,0,0.75)";
+						this.ctx.fillRect(this.pos.origin.x, this.pos.origin.y, 1, 1);
+					}
+				
+					star.life = 3;
+					star.pos.setvec(0, 0);
+					world.add(star);
+				}
+			};
+			this.shell = makeParticle(world.ctx, x, y);
+			this.shell.forces.push(world.gravity);
+			this.shell.life = this.params.life;
+			this.shell.pos.setvec(this.params.vec_x, this.params.vec_y);
+			this.shell.pos.rotate(this.params.theta);
+			this.shell.dieFn = this.burstFn;
+			this.shell.initFn = this.launchFn;
+			this.shell.renderFn = this.flyFn;
+		}
+		return (new shell).shell;
+	}
+	
+	var w;
+</script>
+</head>
+<body style="background:#333;">
+	<center>
+	<canvas id="canvas" width="720" height="480" onLoad="" style="background:black; border: 1px solid #666;"></canvas>
+	</center>
+	<script>
+		w = makeWorld("canvas", 720, 480);
+		window.setInterval(function(){w.step();}, 40);
+		window.setInterval(function(){w.add(launchShell(w, randrange(300, 420), 450));}, 2000);
+	</script>
+
+</body>
+</html>
